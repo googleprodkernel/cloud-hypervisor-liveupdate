@@ -86,7 +86,7 @@ impl EndpointHandler for VmCreate {
                         if let Err(e) = vm_config.consume_fds(fds) {
                             log::error!("Error consuming fds: {e:?}");
                             return error_response(HttpError::BadRequest, StatusCode::BadRequest);
-                        };
+                        }
 
                         match crate::api::VmCreate
                             .send(api_notifier, api_sender, vm_config)
