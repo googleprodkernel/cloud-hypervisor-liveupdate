@@ -173,6 +173,10 @@ pub struct MemoryZoneConfig {
     pub hotplugged_size: Option<u64>,
     #[serde(default)]
     pub prefault: bool,
+
+    // Not serialized/deserialized, as it is populated via ExternalFdsConfig.
+    #[serde(skip)]
+    pub fd: Option<i32>,
 }
 
 impl ApplyLandlock for MemoryZoneConfig {
@@ -241,6 +245,24 @@ impl Default for MemoryConfig {
             zones: None,
             thp: true,
         }
+    }
+}
+
+impl MemoryConfig {
+    pub fn consume_fds(&mut self, fds: &ExternalFdsConfig) -> Result<(), PayloadConfigError> {
+        if fds.ids.is_empty() {
+            return Ok(());
+        }
+
+        let zones = self.zones.as_mut().unwrap();
+        for zone in zones {
+            let Some(idx) = fds.ids.iter().position(|id| id == &zone.id) else {
+                continue;
+            };
+            zone.fd = Some(fds.fds[idx]);
+        }
+
+        Ok(())
     }
 }
 
@@ -363,7 +385,9 @@ pub struct NetConfig {
 
 impl NetConfig {
     pub fn consume_fds(&mut self, fds: Vec<i32>) {
-        if !fds.is_empty() {
+        if fds.is_empty() {
+            self.fds = None;
+        } else {
             self.fds = Some(fds);
         }
     }
@@ -1078,9 +1102,8 @@ impl VmConfig {
         let Some(external_fds) = self.external_fds.as_mut() else {
             if fds.is_empty() {
                 return Ok(());
-            } else {
-                return Err(PayloadConfigError::FdCountMismatch);
             }
+            return Err(PayloadConfigError::FdCountMismatch);
         };
 
         if external_fds.ids.len() != fds.len() {
@@ -1092,6 +1115,9 @@ impl VmConfig {
         }
 
         external_fds.fds = fds;
+
+        // Consume memory fds.
+        self.memory.consume_fds(external_fds)?;
 
         // Consume net fds.
         let Some(nets) = self.net.as_mut() else {

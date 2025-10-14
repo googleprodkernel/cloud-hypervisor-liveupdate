@@ -962,6 +962,7 @@ impl MemoryConfig {
                     hotplug_size,
                     hotplugged_size,
                     prefault,
+                    fd: None,
                 });
             }
             Some(zones)
@@ -2235,7 +2236,7 @@ impl RestoreConfig {
         \nRestore parameters \"source_url=<source_url>,prefault=on|off,\
         \n`source_url` should be a valid URL (e.g file:///foo/bar or tcp://192.168.1.10/foo) \
         \n`prefault` brings memory pages in when enabled (disabled by default) \
-        \n`external_ids` is a list of net device IDs that will receive FDs; \
+        \n`external_ids` is a list of memory zone IDs and/or net device IDs that will receive FDs; \
         \n`external_fds` is the list of FDs for the IDs.";
 
     pub fn parse(restore: &str) -> Result<Self> {
@@ -2307,9 +2308,8 @@ impl RestoreConfig {
         let Some(external_fds) = self.external_fds.as_mut() else {
             if fds.is_empty() {
                 return Ok(());
-            } else {
-                return Err(ValidationError::RestoreFdCountMismatch(0, fds.len()));
             }
+            return Err(ValidationError::RestoreFdCountMismatch(0, fds.len()));
         };
 
         if external_fds.ids.len() != fds.len() {
