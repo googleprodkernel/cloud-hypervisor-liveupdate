@@ -3661,24 +3661,6 @@ impl DeviceManager {
         Err(DeviceManagerError::NoAvailableDeviceName)
     }
 
-    fn add_passthrough_device(
-        &mut self,
-        device_cfg: &mut DeviceConfig,
-    ) -> DeviceManagerResult<(PciBdf, String)> {
-        // If the passthrough device has not been created yet, it is created
-        // here and stored in the DeviceManager structure for future needs.
-        if self.passthrough_device.is_none() {
-            self.passthrough_device = Some(
-                self.address_manager
-                    .vm
-                    .create_passthrough_device()
-                    .map_err(|e| DeviceManagerError::CreatePassthroughDevice(e.into()))?,
-            );
-        }
-
-        self.add_vfio_device(device_cfg)
-    }
-
     fn create_vfio_container(&self) -> DeviceManagerResult<Arc<VfioContainer>> {
         let passthrough_device = self
             .passthrough_device
@@ -3698,6 +3680,17 @@ impl DeviceManager {
         &mut self,
         device_cfg: &mut DeviceConfig,
     ) -> DeviceManagerResult<(PciBdf, String)> {
+        // If the passthrough device has not been created yet, it is created
+        // here and stored in the DeviceManager structure for future needs.
+        if self.passthrough_device.is_none() {
+            self.passthrough_device = Some(
+                self.address_manager
+                    .vm
+                    .create_passthrough_device()
+                    .map_err(|e| DeviceManagerError::CreatePassthroughDevice(e.into()))?,
+            );
+        }
+
         let vfio_name = if let Some(id) = &device_cfg.id {
             id.clone()
         } else {
@@ -3924,7 +3917,7 @@ impl DeviceManager {
 
         if let Some(device_list_cfg) = &mut devices {
             for device_cfg in device_list_cfg.iter_mut() {
-                let (device_id, _) = self.add_passthrough_device(device_cfg)?;
+                let (device_id, _) = self.add_vfio_device(device_cfg)?;
                 if device_cfg.iommu && self.iommu_device.is_some() {
                     iommu_attached_device_ids.push(device_id);
                 }
@@ -4446,7 +4439,7 @@ impl DeviceManager {
             return Err(DeviceManagerError::InvalidIommuHotplug);
         }
 
-        let (bdf, device_name) = self.add_passthrough_device(device_cfg)?;
+        let (bdf, device_name) = self.add_vfio_device(device_cfg)?;
 
         // Update the PCIU bitmap
         self.pci_segments[device_cfg.pci_segment as usize].pci_devices_up |= 1 << bdf.device();
