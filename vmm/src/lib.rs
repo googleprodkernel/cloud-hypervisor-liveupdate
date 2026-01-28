@@ -2353,6 +2353,62 @@ impl RequestHandler for Vmm {
             Err(MigratableError::MigrateSend(anyhow!("VM is not running")))
         }
     }
+
+    fn vm_send_fds(&self, uds_path: String) -> result::Result<Vec<String>, VmError> {
+        use vmm_sys_util::sock_ctrl_msg::ScmSocket;
+
+        log::info!("vm_send_fds -> {uds_path}");
+
+        let Some(vm) = self.vm.as_ref() else {
+            return Err(VmError::VmNotCreated);
+        };
+
+        let fds = vm.get_config().lock().unwrap().external_fds.clone();
+        let Some(fds) = fds else {
+            warn!("vm_send_fds(): no external FDs to send");
+            return Err(VmError::SendFds);
+        };
+
+        if fds.ids.len() != fds.fds.len() {
+            error!(
+                "vm_send_fds(): FD number mismatch: ids.len: {} vs fds.len: {}",
+                fds.ids.len(),
+                fds.fds.len()
+            );
+            return Err(VmError::SendFds);
+        }
+
+        if fds.ids.is_empty() {
+            warn!("vm_send_fds(): no external FDs to send");
+            return Err(VmError::SendFds);
+        }
+
+        let mut socket = UnixStream::connect(uds_path.as_str()).map_err(|err| {
+            error!("vm_send_fds(): UDS connect to '{uds_path}' failed: {err:?}");
+            VmError::SendFds
+        })?;
+
+        let mut ids = String::new();
+        for id in &fds.ids {
+            ids.push_str(id.as_str());
+            ids.push('\n');
+        }
+
+        let num_fds = (fds.fds.len() as u32).to_le_bytes();
+        socket.write_all(&num_fds).map_err(|err| {
+            log::error!("vm_send_fds(): error writing num_fds: {err:?}");
+            VmError::SendFds
+        })?;
+
+        socket
+            .send_with_fds(&[ids.as_bytes()], fds.fds.as_slice())
+            .map_err(|err| {
+                error!("vm_send_fds(): error sending FDs: {err:?}");
+                VmError::SendFds
+            })?;
+
+        Ok(fds.ids)
+    }
 }
 
 const CPU_MANAGER_SNAPSHOT_ID: &str = "cpu-manager";

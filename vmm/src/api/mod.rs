@@ -118,6 +118,10 @@ pub enum ApiError {
     #[error("The VM could not be snapshotted")]
     VmSnapshot(#[source] VmError),
 
+    /// VM FDs could not be sent.
+    #[error("VM FDs could not be sent")]
+    VmSendFds(#[source] VmError),
+
     /// The VM could not be restored.
     #[error("The VM could not be restored")]
     VmRestore(#[source] VmError),
@@ -251,6 +255,12 @@ pub struct VmSnapshotConfig {
 }
 
 #[derive(Clone, Deserialize, Serialize, Default, Debug)]
+pub struct VmSendFdsConfig {
+    /// The UDS path to send FDs to
+    pub uds_path: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, Default, Debug)]
 pub struct VmCoredumpData {
     /// The coredump destination file
     pub destination_url: String,
@@ -363,6 +373,8 @@ pub trait RequestHandler {
     ) -> Result<(), MigratableError>;
 
     fn vm_nmi(&mut self) -> Result<(), VmError>;
+
+    fn vm_send_fds(&self, uds_path: String) -> Result<Vec<String>, VmError>;
 }
 
 /// It would be nice if we could pass around an object like this:
@@ -1378,6 +1390,43 @@ impl ApiAction for VmSnapshot {
             let response = vmm
                 .vm_snapshot(&config.destination_url)
                 .map_err(ApiError::VmSnapshot)
+                .map(|_| ApiResponsePayload::Empty);
+
+            response_sender
+                .send(response)
+                .map_err(VmmError::ApiResponseSend)?;
+
+            Ok(false)
+        })
+    }
+
+    fn send(
+        &self,
+        api_evt: EventFd,
+        api_sender: Sender<ApiRequest>,
+        data: Self::RequestBody,
+    ) -> ApiResult<Self::ResponseBody> {
+        get_response_body(self, api_evt, api_sender, data)
+    }
+}
+
+pub struct VmSendFds;
+
+impl ApiAction for VmSendFds {
+    type RequestBody = VmSendFdsConfig;
+    type ResponseBody = Option<Body>;
+
+    fn request(
+        &self,
+        config: Self::RequestBody,
+        response_sender: Sender<ApiResponse>,
+    ) -> ApiRequest {
+        Box::new(move |vmm| {
+            info!("API request event: VmSendFds {config:?}");
+
+            let response = vmm
+                .vm_send_fds(config.uds_path)
+                .map_err(ApiError::VmSendFds)
                 .map(|_| ApiResponsePayload::Empty);
 
             response_sender

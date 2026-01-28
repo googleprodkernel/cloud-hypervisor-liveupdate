@@ -225,6 +225,9 @@ pub enum Error {
     #[error("Cannot send VM snapshot")]
     SnapshotSend(#[source] MigratableError),
 
+    #[error("Cannot send VM FDs")]
+    SendFds,
+
     #[error("Invalid restore source URL")]
     InvalidRestoreSourceUrl,
 
