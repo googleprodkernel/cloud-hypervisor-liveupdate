@@ -22,6 +22,7 @@ pub mod balloon;
 pub mod block;
 mod console;
 pub mod epoll_helper;
+pub mod fs;
 mod iommu;
 pub mod mem;
 pub mod net;
@@ -50,6 +51,7 @@ pub use self::device::{
 pub use self::epoll_helper::{
     EPOLL_HELPER_EVENT_LAST, EpollHelper, EpollHelperError, EpollHelperHandler,
 };
+pub use self::fs::{Fs, FsState};
 pub use self::iommu::{AccessPlatformMapping, Iommu, IommuMapping};
 pub use self::mem::{BlocksState, Mem, VIRTIO_MEM_ALIGN_SIZE, VirtioMemMappingSource};
 pub use self::net::{Net, NetCtrlEpollHandler};

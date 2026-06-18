@@ -39,6 +39,7 @@ vhost = { workspace = true, features = [
 ] }
 virtio-bindings = { workspace = true }
 virtio-queue = { workspace = true }
+virtiofsd = { path = "../../virtiofsd", default-features = false }
 vm-allocator = { path = "../vm-allocator" }
 vm-device = { path = "../vm-device" }
 vm-memory = { workspace = true, features = [

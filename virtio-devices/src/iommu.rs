@@ -244,7 +244,7 @@ const VIRTIO_IOMMU_FAULT_R_DOMAIN: u32 = 1;
 const VIRTIO_IOMMU_FAULT_R_MAPPING: u32 = 2;
 
 /// Fault reporting through eventq
-#[expect(dead_code)]
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C, packed)]
 struct VirtioIommuFault {
