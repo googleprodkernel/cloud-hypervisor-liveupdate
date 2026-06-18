@@ -47,9 +47,12 @@ pub enum Error {
     /// Filesystem tag is too long
     #[error("Error parsing --fs: max tag length is {VIRTIO_FS_TAG_LEN}")]
     ParseFsTagTooLong,
-    /// Filesystem socket is missing
-    #[error("Error parsing --fs: socket missing")]
-    ParseFsSockMissing,
+    /// Filesystem socket or shared_dir is required
+    #[error("Error parsing --fs: socket or shared_dir required")]
+    ParseFsSockOrSharedDirRequired,
+    /// Filesystem socket and shared_dir are conflicting
+    #[error("Error parsing --fs: socket and shared_dir are mutually exclusive")]
+    ParseFsSockAndSharedDirConflict,
     /// Generic vhost-user virtio ID is invalid
     #[error(
         "Error parsing --generic-vhost-user: virtio ID {0:?} invalid (leading zeros or unknown string)"
@@ -2087,7 +2090,8 @@ impl GenericVhostUserConfig {
 
 impl FsConfig {
     pub const SYNTAX: &'static str = "virtio-fs parameters \
-    \"tag=<tag_name>,socket=<socket_path>,num_queues=<number_of_queues>,\
+    \"tag=<tag_name>,socket=<socket_path>,shared_dir=<shared_directory_path>,\
+    xattr=on|off,writeback=on|off,num_queues=<number_of_queues>,\
     queue_size=<size_of_each_queue>,id=<device_id>,\
     pci_segment=<segment_id>,pci_device_id=<pci_slot>\"";
 
@@ -2098,6 +2102,9 @@ impl FsConfig {
             .add("queue_size")
             .add("num_queues")
             .add("socket")
+            .add("shared_dir")
+            .add("xattr")
+            .add("writeback")
             .add_all(PciDeviceCommonConfig::OPTIONS);
         parser.parse(fs).map_err(Error::ParseFileSystem)?;
 
@@ -2105,7 +2112,28 @@ impl FsConfig {
         if tag.len() > virtio_devices::vhost_user::VIRTIO_FS_TAG_LEN {
             return Err(Error::ParseFsTagTooLong);
         }
-        let socket = PathBuf::from(parser.get("socket").ok_or(Error::ParseFsSockMissing)?);
+
+        let socket = parser.get("socket").map(PathBuf::from);
+        let shared_dir = parser.get("shared_dir").map(PathBuf::from);
+
+        if socket.is_none() && shared_dir.is_none() {
+            return Err(Error::ParseFsSockOrSharedDirRequired);
+        }
+        if socket.is_some() && shared_dir.is_some() {
+            return Err(Error::ParseFsSockAndSharedDirConflict);
+        }
+
+        let xattr = parser
+            .convert::<Toggle>("xattr")
+            .map_err(Error::ParseFileSystem)?
+            .unwrap_or(Toggle(false))
+            .0;
+
+        let writeback = parser
+            .convert::<Toggle>("writeback")
+            .map_err(Error::ParseFileSystem)?
+            .unwrap_or(Toggle(false))
+            .0;
 
         let queue_size = parser
             .convert("queue_size")
@@ -2122,6 +2150,9 @@ impl FsConfig {
             pci_common,
             tag,
             socket,
+            shared_dir,
+            xattr,
+            writeback,
             num_queues,
             queue_size,
         })
@@ -4496,7 +4527,10 @@ mod unit_tests {
     fn fs_fixture() -> FsConfig {
         FsConfig {
             pci_common: PciDeviceCommonConfig::default(),
-            socket: PathBuf::from("/tmp/sock"),
+            socket: Some(PathBuf::from("/tmp/sock")),
+            shared_dir: None,
+            xattr: false,
+            writeback: false,
             tag: "mytag".to_owned(),
             num_queues: 1,
             queue_size: 1024,
@@ -4505,11 +4539,26 @@ mod unit_tests {
 
     #[test]
     fn test_parse_fs() -> Result<()> {
-        // "tag" and "socket" must be supplied
+        // "tag" and ("socket" or "shared_dir") must be supplied
         FsConfig::parse("").unwrap_err();
         FsConfig::parse("tag=mytag").unwrap_err();
         FsConfig::parse("socket=/tmp/sock").unwrap_err();
+        FsConfig::parse("shared_dir=/tmp/shared").unwrap_err();
+
+        // socket and shared_dir are mutually exclusive
+        FsConfig::parse("tag=mytag,socket=/tmp/sock,shared_dir=/tmp/shared").unwrap_err();
+
         assert_eq!(FsConfig::parse("tag=mytag,socket=/tmp/sock")?, fs_fixture());
+        assert_eq!(
+            FsConfig::parse("tag=mytag,shared_dir=/tmp/shared,xattr=on,writeback=on")?,
+            FsConfig {
+                socket: None,
+                shared_dir: Some(PathBuf::from("/tmp/shared")),
+                xattr: true,
+                writeback: true,
+                ..fs_fixture()
+            }
+        );
         assert_eq!(
             FsConfig::parse("tag=mytag,socket=/tmp/sock,num_queues=4,queue_size=1024")?,
             FsConfig {

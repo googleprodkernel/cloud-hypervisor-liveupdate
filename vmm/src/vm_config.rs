@@ -560,7 +560,12 @@ pub struct FsConfig {
     #[serde(flatten)]
     pub pci_common: PciDeviceCommonConfig,
     pub tag: String,
-    pub socket: PathBuf,
+    pub socket: Option<PathBuf>,
+    pub shared_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub xattr: bool,
+    #[serde(default)]
+    pub writeback: bool,
     #[serde(default = "default_fsconfig_num_queues")]
     pub num_queues: usize,
     #[serde(default = "default_fsconfig_queue_size")]
@@ -577,7 +582,12 @@ pub fn default_fsconfig_queue_size() -> u16 {
 
 impl ApplyLandlock for FsConfig {
     fn apply_landlock(&self, landlock: &mut Landlock) -> LandlockResult<()> {
-        landlock.add_rule_with_access(&self.socket, "rw")?;
+        if let Some(socket) = &self.socket {
+            landlock.add_rule_with_access(socket, "rw")?;
+        }
+        if let Some(shared_dir) = &self.shared_dir {
+            landlock.add_rule_with_access(shared_dir, "rw")?;
+        }
         Ok(())
     }
 }
